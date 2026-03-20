@@ -1,0 +1,27 @@
+{
+    "name": "tr_schedule_30min",
+    "properties": {
+        "description": "Aciona o pipeline_retail_media a cada 30 minutos, garantindo latência máxima de ~30min entre ingestão e métricas disponíveis no Gold.",
+        "type": "ScheduleTrigger",
+        "typeProperties": {
+            "recurrence": {
+                "frequency": "Minute",
+                "interval": 30,
+                "startTime": "2024-01-01T00:00:00Z",
+                "timeZone": "E. South America Standard Time"
+            }
+        },
+        "pipelines": [
+            {
+                "pipelineReference": {
+                    "referenceName": "pipeline_retail_media",
+                    "type": "PipelineReference"
+                }
+            }
+        ],
+        "annotations": [
+            "retail-media",
+            "schedule"
+        ]
+    }
+}

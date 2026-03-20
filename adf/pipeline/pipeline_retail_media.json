@@ -1,0 +1,87 @@
+{
+    "name": "pipeline_retail_media",
+    "properties": {
+        "description": "Orquestra as camadas Medallion (Bronze → Silver → Gold) para o pipeline de Retail Media. Executado a cada 30 minutos pelo trigger tr_schedule_30min.",
+        "activities": [
+            {
+                "name": "Bronze_EventHub_Streaming",
+                "description": "Consome eventos do Azure Event Hub via Kafka e grava JSON raw no Delta Bronze (append-only, trigger availableNow).",
+                "type": "DatabricksNotebook",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.01:00:00",
+                    "retry": 1,
+                    "retryIntervalInSeconds": 60,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "notebookPath": "/Shared/retail-media/01_bronze_event_hub_streaming"
+                },
+                "linkedServiceName": {
+                    "referenceName": "ls_databricks",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "Silver_Campaign_Events",
+                "description": "Lê Bronze, tipifica schemas (Impression/Click/Conversion), deduplica por event_id e grava no Delta Silver.",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Bronze_EventHub_Streaming",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.01:00:00",
+                    "retry": 1,
+                    "retryIntervalInSeconds": 60,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "notebookPath": "/Shared/retail-media/02_silver_campaign_events"
+                },
+                "linkedServiceName": {
+                    "referenceName": "ls_databricks",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "Gold_Campaign_Metrics",
+                "description": "Agrega Silver por campanha e data, calcula KPIs (CTR, CVR, ROAS) e grava no Delta Gold (overwrite).",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Silver_Campaign_Events",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.01:00:00",
+                    "retry": 1,
+                    "retryIntervalInSeconds": 60,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "notebookPath": "/Shared/retail-media/03_gold_campaign_metrics"
+                },
+                "linkedServiceName": {
+                    "referenceName": "ls_databricks",
+                    "type": "LinkedServiceReference"
+                }
+            }
+        ],
+        "annotations": [
+            "retail-media",
+            "medallion",
+            "databricks"
+        ]
+    }
+}

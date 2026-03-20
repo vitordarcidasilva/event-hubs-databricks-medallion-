@@ -1,0 +1,19 @@
+{
+    "name": "ls_databricks",
+    "properties": {
+        "description": "Linked Service para o workspace Databricks. Usa access token armazenado no Azure Key Vault (ou ADF Credential). Substitua os valores marcados com <...>.",
+        "type": "AzureDatabricks",
+        "typeProperties": {
+            "domain": "https://<SEU_WORKSPACE_ID>.azuredatabricks.net",
+            "accessToken": {
+                "type": "SecureString",
+                "value": "<DATABRICKS_ACCESS_TOKEN>"
+            },
+            "existingClusterId": "<ID_DO_CLUSTER_EXISTENTE>"
+        },
+        "annotations": [
+            "retail-media",
+            "databricks"
+        ]
+    }
+}

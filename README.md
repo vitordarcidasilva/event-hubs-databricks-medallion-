@@ -1,6 +1,6 @@
 # Retail Media — Event Hub + Databricks Medallion
 
-Pipeline de dados em tempo real para analytics de **Retail Media** (impressões, cliques e conversões de anúncios) usando Azure Event Hub, Databricks Structured Streaming e arquitetura Medallion com Delta Lake.
+Pipeline de dados em tempo real para analytics de **Retail Media** (impressões, cliques e conversões de anúncios) usando Azure Event Hub, Databricks Structured Streaming, arquitetura Medallion com Delta Lake e orquestração via Azure Data Factory.
 
 ---
 
@@ -27,6 +27,11 @@ Pipeline de dados em tempo real para analytics de **Retail Media** (impressões,
                          ▼
 ┌─────────────────────────┐
 │  Azure Data Lake Gen2    │   containers: bronze · silver · gold · checkpoints
+└─────────────────────────┘
+             ▲
+             │ orquestra a cada 30 min
+┌─────────────────────────┐
+│  Azure Data Factory      │   pipeline_retail_media → trigger tr_schedule_30min
 └─────────────────────────┘
 ```
 
@@ -303,6 +308,90 @@ python producer.py --dry-run
 
 ---
 
+## Orquestração — Azure Data Factory
+
+O ADF agenda e executa os 3 notebooks em sequência a cada 30 minutos, garantindo latência máxima de ~30 min entre a chegada do evento e o dado disponível no Gold.
+
+```
+pipeline_retail_media
+  └─ Bronze_EventHub_Streaming   (01_bronze...)
+       └─ Silver_Campaign_Events  (02_silver...) [dependsOn: Bronze]
+            └─ Gold_Campaign_Metrics (03_gold...) [dependsOn: Silver]
+
+Trigger: tr_schedule_30min → a cada 30 min (fuso: America/Sao_Paulo)
+```
+
+### Deploy do ADF
+
+```bash
+# Bash / Linux / macOS (execute na raiz do projeto)
+bash infra/setup_adf.sh
+
+# PowerShell / Windows
+.\infra\setup_adf.ps1
+```
+
+Antes de executar, edite o script com:
+- `DATABRICKS_WORKSPACE_URL` — URL do seu workspace
+- `DATABRICKS_TOKEN` — Personal Access Token do Databricks
+- `DATABRICKS_CLUSTER_ID` — ID do cluster existente
+
+**Comandos Azure CLI equivalentes (referência):**
+
+```bash
+# Criar ADF
+az datafactory create \
+  --resource-group rg-retail-media \
+  --factory-name adf-retail-media-dev \
+  --location brazilsouth
+
+# Criar Linked Service Databricks
+az datafactory linked-service create \
+  --resource-group rg-retail-media \
+  --factory-name adf-retail-media-dev \
+  --linked-service-name ls_databricks \
+  --properties @adf/linked_service/ls_databricks.json
+
+# Criar Pipeline
+az datafactory pipeline create \
+  --resource-group rg-retail-media \
+  --factory-name adf-retail-media-dev \
+  --name pipeline_retail_media \
+  --pipeline @adf/pipeline/pipeline_retail_media.json
+
+# Criar Trigger (30 min)
+az datafactory trigger create \
+  --resource-group rg-retail-media \
+  --factory-name adf-retail-media-dev \
+  --trigger-name tr_schedule_30min \
+  --properties @adf/trigger/tr_schedule_30min.json
+
+# Ativar trigger
+az datafactory trigger start \
+  --resource-group rg-retail-media \
+  --factory-name adf-retail-media-dev \
+  --trigger-name tr_schedule_30min
+
+# Monitorar execuções do pipeline
+az datafactory pipeline-run query-by-factory \
+  --resource-group rg-retail-media \
+  --factory-name adf-retail-media-dev \
+  --last-updated-after "2024-01-01T00:00:00Z" \
+  --last-updated-before "2099-01-01T00:00:00Z"
+```
+
+### Artefatos ADF
+
+Os JSONs em `adf/` podem ser importados diretamente pelo **ADF Studio** (Import → ARM Template ou Live Mode) ou implantados via CLI conforme acima.
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `adf/pipeline/pipeline_retail_media.json` | Pipeline com 3 atividades DatabricksNotebook em sequência |
+| `adf/linked_service/ls_databricks.json` | Conexão com workspace Databricks (access token) |
+| `adf/trigger/tr_schedule_30min.json` | ScheduleTrigger a cada 30 min, fuso São Paulo |
+
+---
+
 ## Executar os Notebooks Databricks
 
 Importe os notebooks da pasta `notebooks/` para seu workspace e execute na ordem:
@@ -347,7 +436,17 @@ event_hubs_databricks_medalion/
 │   ├── setup_event_hub.ps1             # Cria Event Hub (PowerShell/Windows)
 │   ├── setup_adls.ps1                  # Cria ADLS Gen2 + containers
 │   ├── setup_databricks_secrets.ps1    # Cria Secret Scope e secrets
-│   └── assign_role_adls.ps1            # Atribui IAM ao Databricks no ADLS
+│   ├── assign_role_adls.ps1            # Atribui IAM ao Databricks no ADLS
+│   ├── setup_adf.sh                    # Cria ADF + pipeline + trigger (Bash/Linux)
+│   └── setup_adf.ps1                   # Cria ADF + pipeline + trigger (PowerShell/Windows)
+│
+├── adf/                                # Artefatos Azure Data Factory
+│   ├── pipeline/
+│   │   └── pipeline_retail_media.json  # Pipeline com 3 atividades Databricks em sequência
+│   ├── linked_service/
+│   │   └── ls_databricks.json          # Linked Service para workspace Databricks
+│   └── trigger/
+│       └── tr_schedule_30min.json      # ScheduleTrigger a cada 30 min
 │
 └── notebooks/                          # Notebooks Databricks
     ├── 01_bronze_event_hub_streaming.py  # Kafka → Delta Bronze (streaming)
@@ -382,6 +481,7 @@ Todos os eventos incluem: `event_id` (UUID), `event_type`, `event_timestamp`, `u
 | Ingestão | Azure Event Hub (protocolo Kafka) |
 | Processamento | Azure Databricks · PySpark Structured Streaming |
 | Armazenamento | Azure Data Lake Gen2 · Delta Lake |
+| Orquestração | Azure Data Factory · ScheduleTrigger · DatabricksNotebook activity |
 | IaC | Azure Bicep · Azure CLI · PowerShell |
 | Gerador | Python · azure-eventhub SDK |
 | Segurança | Databricks Secret Scope · RBAC mínimo por policy |
