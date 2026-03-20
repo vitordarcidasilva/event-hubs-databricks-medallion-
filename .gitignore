@@ -31,3 +31,6 @@ Thumbs.db
 
 # Databricks
 .databricks/
+
+# Claude Code
+.claude/
