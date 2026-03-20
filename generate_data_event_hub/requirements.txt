@@ -1,0 +1,4 @@
+azure-eventhub==5.11.7
+azure-identity==1.17.1
+faker==25.2.0
+python-dotenv==1.0.1
